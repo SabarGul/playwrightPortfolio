@@ -21,7 +21,6 @@ test.describe('Cart Functionality', () => {
         await page.locator('[data-test="postalCode"]').fill('87300');
         await page.locator('[data-test="continue"]').click();
         await expect(page.locator('[data-test="title"]')).toBeVisible();
-        //await page.close();
         await page.locator('[data-test="finish"]').click();
         await expect(page.locator('[data-test="pony-express"]')).toBeVisible();
         await expect(page.locator('[data-test="complete-header"]')).toBeVisible();
