@@ -25,7 +25,7 @@
 
 ```sh
 # Clone this repository
-git clone https://github.com/yourusername/playwright-portfolio.git
+git clone https://github.com/SabarGul/playwrightPortfolio.git
 
 # Navigate to the project folder
 cd playwright-portfolio
