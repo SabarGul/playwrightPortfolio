@@ -2,15 +2,15 @@
 
 ![Playwright Logo](https://playwright.dev/img/playwright-logo.svg)  
 
-🚀 **Automating the web with Playwright!** This repository contains my Playwright test automation projects, showcasing my skills in **end-to-end testing**, **cross-browser automation**, and **continuous integration with GitHub Actions**.  
+🚀 **Automating the web with Playwright!** This repository showcases my Playwright test automation for **[SauceDemo](https://www.saucedemo.com/)**, demonstrating skills in **end-to-end testing**, **cross-browser automation**, and **continuous integration with GitHub Actions**.  
 
 ---
 
 ## 🔥 **What’s Inside?**  
-- ✅ **Playwright Test Scripts** – Automated test cases for various web applications  
-- 🏗 **Framework Setup** – Playwright configuration, project structure, and reusable utilities  
-- 🔄 **CI/CD Integration** – GitHub Actions workflow for running tests in different browsers  
-- 📊 **Test Reports** – Screenshots, videos, and HTML reports for test execution  
+- ✅ **Automated Test Suite** – Playwright test cases for SauceDemo 🛒  
+- 🏗 **Framework Setup** – Playwright configuration, reusable utilities, and best practices  
+- 🔄 **CI/CD Integration** – GitHub Actions workflow for automated test execution  
+- 📊 **Test Reports** – Screenshots, videos, and HTML reports for tracking results  
 
 ---
 
@@ -19,6 +19,7 @@
 ![Playwright](https://img.shields.io/badge/-Playwright-2D8CFF?style=flat&logo=playwright&logoColor=white)
 ![GitHub Actions](https://img.shields.io/badge/-GitHub_Actions-2088FF?style=flat&logo=github-actions&logoColor=white)
 
+---
 
 ## 🏗 **Project Setup**  
 💻 Follow these steps to set up and run Playwright tests locally:  
@@ -40,3 +41,15 @@ npx playwright test --headed
 npx playwright test --project=chromium
 npx playwright test --project=firefox
 npx playwright test --project=webkit
+```
+
+---
+
+## 👥 **Contributors**  
+🛠 Built and maintained by:  
+- **Sabar Gul**  
+- **Yousaf Murad Khurram**  
+
+---
+
+✨ *Automating the web, one test at a time!* 🚀
