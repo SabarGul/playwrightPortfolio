@@ -1,6 +1,6 @@
 # 🎭 Playwright Portfolio  
 
-![Playwright Animation](https://media.giphy.com/media/v1.Y2lkPTc5MGI3NjExeTltdXdzNTlvMHRoZGFydTJyb3Q0c3M5bnR5emhvaWwybTNhdnI2eiZlcD12MV9naWZzX3NlYXJjaCZjdD1n/WF7Vh4zIMxxB4/giphy.gif)  
+![Playwright Animation](https://media.giphy.com/media/VhWVAa7rUtT3xKX6Cd/giphy.gif?cid=790b7611ada1mvfvblbkayor7wpk4slj9mtute23wlrv2jq2&ep=v1_gifs_search&rid=giphy.gif&ct=g)  
 
 🚀 **Automating the web with Playwright!** This repository showcases automated testing for **[SauceDemo](https://www.saucedemo.com/)**, covering **end-to-end testing**, **cross-browser automation**, and **CI/CD integration** using GitHub Actions.  
 
@@ -50,11 +50,6 @@ npx playwright test --project=chromium
 npx playwright test --project=firefox  
 npx playwright test --project=webkit  
 ```  
-
----  
-
-## 🎬 **Live Test Execution Preview**  
-![Live Testing](https://media.giphy.com/media/JRL7XzUdDLzz1SKGAn/giphy.gif)  
 
 ---  
 
