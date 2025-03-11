@@ -3,7 +3,7 @@ name: Daily Test Report
 on:
   schedule:
     - cron: "15 09 * * *"  # Runs daily at 9:15 AM UTC (which is 2:15 PM PST)
-  workflow_dispatch:  # Allows manual triggering
+  workflow_dispatch:
 
 jobs:
   run-tests:
@@ -21,35 +21,23 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Run tests
-        run: |
-          npx playwright test --reporter=json > test-report.json
+      - name: Run Playwright tests with HTML report
+        run: npx playwright test --reporter=html
 
-      - name: Upload test report artifact
+      - name: Upload Playwright HTML report as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: test-report
-          path: test-report.json
-
-      - name: Install jq (JSON Processor)
-        run: sudo apt-get update && sudo apt-get install -y jq
+          name: playwright-report
+          path: playwright-report  # Default Playwright report folder
 
       - name: Send test results to Slack
         env:
-          SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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  # Use GitHub Secrets for security
+            SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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  # Use GitHub Secrets for security
         run: |
-          PASSED=$(jq '[.suites[].specs[] | select(.results[].status=="passed")] | length' test-report.json)
-          FAILED=$(jq '[.suites[].specs[] | select(.results[].status=="failed")] | length' test-report.json)
-          SKIPPED=$(jq '[.suites[].specs[] | select(.results[].status=="skipped")] | length' test-report.json)
           DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
-
+          
           curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \"*Daily Test Report*\n\n*✅ Passed:* $PASSED\n❌ *Failed:* $FAILED\n⏭️ *Skipped:* $SKIPPED\n\n[📥 Download Test Report]($DOWNLOAD_URL)\"
+            \"text\": \"*Daily Test Report*\n\nTest execution completed.\n📊 [View Playwright Report]($DOWNLOAD_URL)\"
           }" "$SLACK_WEBHOOK_URL"
 
-
-
-
-        #   - name: Send test results to Slack
-        #   env:
-        #     
+            #     
