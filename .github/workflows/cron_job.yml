@@ -18,8 +18,9 @@ jobs:
         with:
           node-version: 18
 
-      - name: Install dependencies
-        run: npx playwright install
+      - name: Install Playwright and browsers
+        run: |
+          npx playwright install --with-deps
 
       - name: Run Playwright tests with HTML report
         run: npx playwright test --reporter=html
@@ -32,12 +33,10 @@ jobs:
 
       - name: Send test results to Slack
         env:
-            SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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  # Use GitHub Secrets for security
+          SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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  # Use GitHub Secrets for security
         run: |
           DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
           
           curl -X POST -H 'Content-type: application/json' --data "{
             \"text\": \"*Daily Test Report*\n\nTest execution completed.\n📊 [View Playwright Report]($DOWNLOAD_URL)\"
           }" "$SLACK_WEBHOOK_URL"
-
-            #     
