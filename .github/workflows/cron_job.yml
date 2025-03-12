@@ -1,43 +1,71 @@
-name: Daily Test Report
+name: Playwright Tests
 
 on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
   schedule:
-    - cron: "15 09 * * *"  # Runs daily at 9:15 AM UTC (which is 2:15 PM PST)
-  workflow_dispatch:
+    - cron: "0 13 * * *"  # Runs every day at 13:00 UTC (6 PM PST)
 
 jobs:
-  run-tests:
+  test:
+    timeout-minutes: 60
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 18
-
-      - name: Install Playwright and browsers
-        run: |
-          npm install @playwright/test
-          npx playwright install
-
-      - name: Run Playwright tests with HTML report
-        run: npx playwright test --reporter=html
-
-      - name: Upload Playwright HTML report as artifact
-        uses: actions/upload-artifact@v4
+          node-version: lts/*
+      - name: Install dependencies
+        run: npm ci
+      - name: Install Playwright Browsers
+        run: npx playwright install --with-deps
+      - name: Run Playwright tests
+        run: npx playwright test --reporter=json,json-summary 
+      - uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
         with:
           name: playwright-report
-          path: playwright-report  # Default Playwright report folder
-
-      - name: Send test results to Slack
-        env:
-          SLACK_WEBHOOK_URL: https://hooks.slack.com/services/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  # Use GitHub Secrets for security
+          path: playwright-report/
+          retention-days: 30
+      
+      - name: Generate Test Summary
         run: |
-          DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
-          
-          curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \"*Daily Test Report*\n\nTest execution completed.\n📊 [View Playwright Report]($DOWNLOAD_URL)\"
-          }" "$SLACK_WEBHOOK_URL"
+          # Extracting test results from JSON
+          PASSED=$(jq '.summary.passed' playwright-report/json-summary.json)
+          FAILED=$(jq '.summary.failed' playwright-report/json-summary.json)
+          SKIPPED=$(jq '.summary.skipped' playwright-report/json-summary.json)
+          TOTAL=$((PASSED + FAILED + SKIPPED))
+
+          # Calculating pass percentage
+          if [ "$TOTAL" -gt 0 ]; then
+            PASS_PERCENTAGE=$((PASSED * 100 / TOTAL))
+          else
+            PASS_PERCENTAGE=0
+          fi
+
+          # Generating bar chart
+          PASS_BAR=$(printf '🟩%.0s' $(seq 1 $((PASSED * 10 / TOTAL))))
+          FAIL_BAR=$(printf '🟥%.0s' $(seq 1 $((FAILED * 10 / TOTAL))))
+          SKIP_BAR=$(printf '🟨%.0s' $(seq 1 $((SKIPPED * 10 / TOTAL))))
+
+          # Preparing the Slack message
+          echo "SLACK_MESSAGE=🎭 *Playwright Test Results* 🎭
+
+          ✅ *Passed:* $PASSED
+          ❌ *Failed:* $FAILED
+          ⚠️ *Skipped:* $SKIPPED
+          📊 *Pass Rate:* $PASS_PERCENTAGE%
+
+          Progress: $PASS_BAR$FAIL_BAR$SKIP_BAR
+
+          📜 *Report:* <URL_TO_ARTIFACT>" >> $GITHUB_ENV
+
+      - name: Send Slack Notification
+        uses: rtCamp/action-slack-notify@v2
+        env:
+          SLACK_WEBHOOK: https://hooks.slack.com/services/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
+          SLACK_CHANNEL: "your-channel"
+          SLACK_USERNAME: "GitHub Actions"
+          SLACK_MESSAGE: ${{ env.SLACK_MESSAGE }}
