@@ -12,65 +12,137 @@ jobs:
   test:
     timeout-minutes: 60
     runs-on: ubuntu-latest
+    if: github.event.schedule == "0 13 * * *"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Install Node.js
+        uses: actions/setup-node@v2
         with:
-          node-version: lts/*
+          node-version: 18
+
       - name: Install dependencies
-        run: npm ci
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps
+        run: |
+          npm ci
+          npm install
+
+      - name: Install xmlstarlet
+        run: |
+          sudo apt-get update && sudo apt-get install -y xmlstarlet
+
+      - name: Install Playwright Browser chromium and firefox
+        run: |
+          npx playwright install-deps chromium
+          npx playwright install-deps firefox
+          npx playwright install chromium
+          npx playwright install firefox
+
       - name: Run Playwright tests
-        run: npx playwright test --reporter=json
-        continue-on-error: true
-      - name: Upload Playwright Report
+        if: ${{always()}}
+        id: PlaywrightPortfolioStatus
+
+        run: |
+          npx playwright test 
+      - name: Upload Artifacts
+        id: upload_artifact_playwright_portfolio
         uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ !cancelled() }}
         with:
           name: playwright-report
           path: playwright-report/
-          retention-days: 30
-
-      - name: Generate Test Summary
+          retention-days: 1
+          overwrite: true
+      - name: Run Playwright tests copy
         run: |
-          # Extract test results from JSON
-          JSON_FILE="playwright-report/results.json"
-          
-          PASSED=$(jq '[.suites[].specs[].tests[] | select(.results[].status=="passed")] | length' $JSON_FILE)
-          FAILED=$(jq '[.suites[].specs[].tests[] | select(.results[].status=="failed")] | length' $JSON_FILE)
-          SKIPPED=$(jq '[.suites[].specs[].tests[] | select(.results[].status=="skipped")] | length' $JSON_FILE)
-          TOTAL=$((PASSED + FAILED + SKIPPED))
-
-          # Calculate pass percentage
-          if [ "$TOTAL" -gt 0 ]; then
-            PASS_PERCENTAGE=$((PASSED * 100 / TOTAL))
+          if ! cmp -s results.xml $GITHUB_WORKSPACE/results.xml; then
+            cp results.xml $GITHUB_WORKSPACE/results.xml
           else
-            PASS_PERCENTAGE=0
+            echo "No changes to results.xml. Skipping copy."
+          fi            
+
+
+      - name: Read XML and Send Slack Notification
+        if: ${{ always() }}
+        env:
+          WEBHOOK_URL: https://hooks.slack.com/services/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
+        run: |
+          # Read test counts from results.xml using xmlstarlet
+          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" $GITHUB_WORKSPACE/results.xml)
+          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" $GITHUB_WORKSPACE/results.xml)
+          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" $GITHUB_WORKSPACE/results.xml)
+          passed_tests=$((total_tests - (failed_tests + skipped_tests)))
+
+          # Determine status based on conditions
+          if [ $failed_tests -eq 0 ]; then
+            STATUS="passed"
+          else
+            STATUS="failed"
           fi
 
-          # Generate bar chart
-          PASS_BAR=$(printf '🟩%.0s' $(seq 1 $((PASSED * 10 / TOTAL))))
-          FAIL_BAR=$(printf '🟥%.0s' $(seq 1 $((FAILED * 10 / TOTAL))))
-          SKIP_BAR=$(printf '🟨%.0s' $(seq 1 $((SKIPPED * 10 / TOTAL))))
+          # Output status based on passed tests
+          echo "Status: $STATUS"
 
-          # Prepare Slack message
-          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"  
-          echo "SLACK_MESSAGE=🎭 *Playwright Test Results* 🎭
+          # Optionally, set ICON and COLOR based on STATUS
+          if [ "$STATUS" == "passed" ]; then
+            ICON="✔️"
+            COLOR="00FF00"
+          else
+            ICON="❌"
+            COLOR="FF0000"
+          fi
 
-          ✅ *Passed:* $PASSED
-          ❌ *Failed:* $FAILED
-          ⚠️ *Skipped:* $SKIPPED
-          📊 *Pass Rate:* $PASS_PERCENTAGE%
 
-          Progress: $PASS_BAR$FAIL_BAR$SKIP_BAR
+          # Constructing Slack notification payload in JSON format
+          payload='{
+            "@type": "MessageCard",
+            "@context": "http://schema.org/extensions",
+            "summary": "Daily Run",
+            "themeColor": "'"$COLOR"'",
+            "sections": [
+              {
+                "activityTitle": "New Daily Run",
+                "facts": [
+                  {
+                    "name": "Repository",
+                    "value": "${{ github.repository }}"
+                  },
+                  {
+                    "name": "Status",
+                    "value": "'"$ICON $STATUS"'"
+                  },
+                  {
+                    "name": "Total Tests",
+                    "value": "'"$total_tests"'"
+                  },
+                  {
+                    "name": "Passed Tests",
+                    "value": "'"$passed_tests"'"
+                  },
+                  {
+                    "name": "Failed Tests",
+                    "value": "'"$failed_tests"'"
+                  },
+                  {
+                    "name": "Skipped Tests",
+                    "value": "'"$skipped_tests"'"
+                  },
+                  {
+                    "name": " Report Download Url",
+                    "value": "[Click to Download Report](${{ steps.upload_artifact_playwright_portfolio.outputs.artifact-url}})"
+                  },
+                  {
+                    "name": "Project Name",
+                    "value": "'"Playwright Portfolio by Sabar & Yousaf"'"
+                  },
 
-          📜 *Report:* $ARTIFACT_URL" >> $GITHUB_ENV
+                ],
+                "markdown": true
+              }
+            ]
+          }'
 
-      - name: Send Slack Notification
-        uses: rtCamp/action-slack-notify@v2
-        env:
-          SLACK_WEBHOOK: https://hooks.slack.com/services/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
-          SLACK_CHANNEL: "portfoliotestreports"
-          SLACK_USERNAME: "GitHub Actions"
-          SLACK_MESSAGE: ${{ env.SLACK_MESSAGE }}
+          echo "$payload"  # Check payload for any syntax errors or unexpected output
+
+          # Send payload to Slack webhook URL
+          curl -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK_URL"
