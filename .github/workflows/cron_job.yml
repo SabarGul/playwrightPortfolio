@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [ main, master ]
   schedule:
-    - cron: "0 14 * * *"  # Runs every day at 13:00 UTC (6 PM PST)
+    - cron: "0 13 * * *"  # Runs every day at 13:00 UTC (6 PM PST)
 
 jobs:
   test:
@@ -27,30 +27,26 @@ jobs:
           npm install
           npx playwright install
 
-      - name: Install xmlstarlet
+      - name: Install missing dependencies for Playwright
         run: |
-          sudo apt-get update && sudo apt-get install -y xmlstarlet
+          sudo apt-get update
+          sudo apt-get install -y libgtk-4-1 libgraphene-1.0-0 libwoff2-1 \
+            libvpx9 libevent-2.1-7 libopus0 libgstreamer1.0-0 libgstreamer-plugins-base1.0-0 \
+            libflite1 libavif16 libharfbuzz-icu0 libsecret-1-0 libhyphen0 \
+            libmanette-0.2-0 libgles2-mesa libx264-164
 
-      - name: Install Playwright Browsers (Chromium & Firefox)
+      - name: Install Playwright Browser chromium and firefox
         run: |
           npx playwright install-deps chromium
           npx playwright install-deps firefox
           npx playwright install chromium
           npx playwright install firefox
 
-      - name: Run Playwright tests with JUnit reporter
+      - name: Run Playwright tests
+        if: ${{always()}}
         id: PlaywrightPortfolioStatus
         run: |
-          npx playwright test --reporter=junit
-
-      - name: Verify Test Report Exists
-        run: |
-          if [ -f "playwright-report/results.xml" ]; then
-            echo "Test report exists."
-          else
-            echo "Test report missing!"
-            exit 1
-          fi
+          npx playwright test --reporter=junit 
 
       - name: Upload Artifacts
         id: upload_artifact_playwright_portfolio
@@ -68,27 +64,34 @@ jobs:
           WEBHOOK_URL: https://hooks.slack.com/services/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
         run: |
           RESULTS_XML="playwright-report/results.xml"
-
-          if [ ! -f "$RESULTS_XML" ]; then
+          if [[ ! -f "$RESULTS_XML" ]]; then
             echo "Error: results.xml not found!"
             exit 1
           fi
-
-          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" "$RESULTS_XML")
-          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" "$RESULTS_XML")
-          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" "$RESULTS_XML")
+          
+          # Read test counts from results.xml using xmlstarlet
+          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" $RESULTS_XML)
+          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" $RESULTS_XML)
+          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" $RESULTS_XML)
           passed_tests=$((total_tests - (failed_tests + skipped_tests)))
 
-          STATUS="failed"
-          if [ "$failed_tests" -eq 0 ]; then STATUS="passed"; fi
+          # Determine status based on conditions
+          if [ $failed_tests -eq 0 ]; then
+            STATUS="passed"
+          else
+            STATUS="failed"
+          fi
 
-          ICON="❌"
-          COLOR="FF0000"
+          # Set ICON and COLOR based on STATUS
           if [ "$STATUS" == "passed" ]; then
             ICON="✔️"
             COLOR="00FF00"
+          else
+            ICON="❌"
+            COLOR="FF0000"
           fi
 
+          # Constructing Slack notification payload
           payload='{
             "@type": "MessageCard",
             "@context": "http://schema.org/extensions",
@@ -98,19 +101,45 @@ jobs:
               {
                 "activityTitle": "New Daily Run",
                 "facts": [
-                  {"name": "Repository", "value": "${{ github.repository }}"},
-                  {"name": "Status", "value": "'"$ICON $STATUS"'"},
-                  {"name": "Total Tests", "value": "'"$total_tests"'"},
-                  {"name": "Passed Tests", "value": "'"$passed_tests"'"},
-                  {"name": "Failed Tests", "value": "'"$failed_tests"'"},
-                  {"name": "Skipped Tests", "value": "'"$skipped_tests"'"},
-                  {"name": "Report Download Url", "value": "[Click to Download Report](${{ steps.upload_artifact_playwright_portfolio.outputs.artifact-url }})"},
-                  {"name": "Project Name", "value": "'"Playwright Portfolio by Sabar & Yousaf"'"}
+                  {
+                    "name": "Repository",
+                    "value": "${{ github.repository }}"
+                  },
+                  {
+                    "name": "Status",
+                    "value": "'"$ICON $STATUS"'"
+                  },
+                  {
+                    "name": "Total Tests",
+                    "value": "'"$total_tests"'"
+                  },
+                  {
+                    "name": "Passed Tests",
+                    "value": "'"$passed_tests"'"
+                  },
+                  {
+                    "name": "Failed Tests",
+                    "value": "'"$failed_tests"'"
+                  },
+                  {
+                    "name": "Skipped Tests",
+                    "value": "'"$skipped_tests"'"
+                  },
+                  {
+                    "name": "Report Download Url",
+                    "value": "[Click to Download Report](${{ steps.upload_artifact_playwright_portfolio.outputs.artifact-url }})"
+                  },
+                  {
+                    "name": "Project Name",
+                    "value": "'"Playwright Portfolio by Sabar & Yousaf"'"
+                  }
                 ],
                 "markdown": true
               }
             ]
           }'
 
-          echo "$payload"
+          echo "$payload"  # Debugging JSON payload
+
+          # Send payload to Slack webhook URL
           curl -X POST -H 'Content-type: application/json' --data "$payload" "$WEBHOOK_URL"
