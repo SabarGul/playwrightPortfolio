@@ -25,6 +25,7 @@ jobs:
         run: |
           npm ci
           npm install
+          npx playwright install
 
       - name: Install xmlstarlet
         run: |
@@ -52,14 +53,6 @@ jobs:
           path: playwright-report/
           retention-days: 1
           overwrite: true
-      - name: Run Playwright tests copy
-        run: |
-          if ! cmp -s results.xml $GITHUB_WORKSPACE/results.xml; then
-            cp results.xml $GITHUB_WORKSPACE/results.xml
-          else
-            echo "No changes to results.xml. Skipping copy."
-          fi            
-
 
       - name: Read XML and Send Slack Notification
         if: ${{ always() }}
