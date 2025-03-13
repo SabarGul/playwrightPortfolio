@@ -3,19 +3,17 @@
 # on:
 #   push:
 #     branches:
-#       - main
 #       - master
 #   pull_request:
 #     branches:
-#       - main
 #       - master
 #   schedule:
-#     - cron: '0 2 * * *'  # Runs daily at 2 AM UTC
+#     - cron: '0 7 * * *'  # Runs daily at 7 AM UTC (12 PM PST)
+#   workflow_dispatch:
 
 # jobs:
 #   test:
 #     runs-on: ubuntu-latest
-
 #     steps:
 #       - name: Checkout Repository
 #         uses: actions/checkout@v4
@@ -28,32 +26,58 @@
 #       - name: Install Dependencies
 #         run: npm install
 
-#       - name: Install Playwright (Chrome Only)
-#         run: npx playwright install --with-deps chromium
+#       - name: Install Playwright Browsers
+#         run: npx playwright install --with-deps
 
-#       - name: Run Playwright Tests (Chrome Only)
-#         id: PlaywrightTests
-#         continue-on-error: true
-#         run: npx playwright test --project=chromium --reporter=html
+#       - name: Run Playwright Tests (Chrome only)
+#         id: playwright_tests
+#         run: npx playwright test --project=chromium --reporter=json > test-results.json || true
 
-#       - name: Upload Playwright Report
-#         if: always()
-#         uses: actions/upload-artifact@v4  # ✅ UPDATED VERSION
+#       - name: Parse Playwright Test Results
+#         id: parse_results
+#         run: |
+#           PASSED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "passed")] | length' test-results.json)
+#           FAILED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "failed")] | length' test-results.json)
+#           SKIPPED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "skipped")] | length' test-results.json)
+#           TOTAL=$((PASSED + FAILED + SKIPPED))
+#           if [ "$TOTAL" -gt 0 ]; then
+#             PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
+#           else
+#             PASS_PERCENTAGE=0
+#           fi
+#           echo "PASSED=$PASSED" >> $GITHUB_ENV
+#           echo "FAILED=$FAILED" >> $GITHUB_ENV
+#           echo "SKIPPED=$SKIPPED" >> $GITHUB_ENV
+#           echo "TOTAL=$TOTAL" >> $GITHUB_ENV
+#           echo "PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
+
+#       - name: Generate Playwright HTML Report
+#         run: npx playwright test --reporter=html || true
+
+#       - name: Compress Playwright Report
+#         run: zip -r playwright-report.zip playwright-report/
+
+#       - name: Upload Playwright Report Artifact
+#         uses: actions/upload-artifact@v4
 #         with:
 #           name: playwright-report
-#           path: playwright-report/
-#           retention-days: 5
+#           path: playwright-report.zip
+#           retention-days: 7
 
-#       - name: Send Slack Notification
+#       - name: Send Microsoft Teams Notification
 #         if: always()
 #         env:
-#           WEBHOOK_URL: https://hooks.slack.com/services/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
+#           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
 #         run: |
 #           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-#           curl -X POST -H 'Content-type: application/json' --data "{
-#             \"text\": \"*Playwright Test Report 📜:*\n🔗 View Report: <$ARTIFACT_URL|Click Here>\"
-#           }" $WEBHOOK_URL
-
+#           curl -X POST -H "Content-Type: application/json" --data "$(jq -n \
+#             --arg passed "$PASSED" \
+#             --arg failed "$FAILED" \
+#             --arg skipped "$SKIPPED" \
+#             --arg percentage "$PASS_PERCENTAGE" \
+#             --arg url "$ARTIFACT_URL" \
+#             '{text: "✅ *Playwright Tests Completed!*\n📊 *Test Results:*\n- ✅ Passed: *\($passed)*\n- ❌ Failed: *\($failed)*\n- ⏭ Skipped: *\($skipped)*\n- 📈 Pass Rate: *\($percentage)%*\n📜 *[View Report](\($url))*"}')" \
+#             "$TEAMS_WEBHOOK_URL"
 
 
 name: Playwright Tests
@@ -66,7 +90,7 @@ on:
     branches:
       - master
   schedule:
-    - cron: '0 7 * * *'  # Runs daily at 7 AM UTC (12 PM PST)
+    - cron: '0 7 * * *'  # Runs daily at 7 AM UTC
   workflow_dispatch:
 
 jobs:
@@ -87,27 +111,38 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
-      - name: Run Playwright Tests (Chrome only)
+      - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
-        run: npx playwright test --project=chromium --reporter=json > test-results.json || true
+        run: |
+          npx playwright test --reporter=json > test-results.json || true
 
       - name: Parse Playwright Test Results
         id: parse_results
         run: |
-          PASSED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "passed")] | length' test-results.json)
-          FAILED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "failed")] | length' test-results.json)
-          SKIPPED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "skipped")] | length' test-results.json)
-          TOTAL=$((PASSED + FAILED + SKIPPED))
-          if [ "$TOTAL" -gt 0 ]; then
-            PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
-          else
-            PASS_PERCENTAGE=0
-          fi
-          echo "PASSED=$PASSED" >> $GITHUB_ENV
-          echo "FAILED=$FAILED" >> $GITHUB_ENV
-          echo "SKIPPED=$SKIPPED" >> $GITHUB_ENV
-          echo "TOTAL=$TOTAL" >> $GITHUB_ENV
-          echo "PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
+          # Extract results per browser
+          extract_results() {
+            BROWSER=$1
+            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "passed" and .project == $browser)] | length' test-results.json)
+            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "failed" and .project == $browser)] | length' test-results.json)
+            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "skipped" and .project == $browser)] | length' test-results.json)
+            TOTAL=$((PASSED + FAILED + SKIPPED))
+            if [ "$TOTAL" -gt 0 ]; then
+              PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
+            else
+              PASS_PERCENTAGE=0
+            fi
+            echo "$BROWSER: ✅ $PASSED | ❌ $FAILED | ⏭ $SKIPPED | 📈 $PASS_PERCENTAGE%" >> summary.txt
+            echo "$BROWSER_PASSED=$PASSED" >> $GITHUB_ENV
+            echo "$BROWSER_FAILED=$FAILED" >> $GITHUB_ENV
+            echo "$BROWSER_SKIPPED=$SKIPPED" >> $GITHUB_ENV
+            echo "$BROWSER_TOTAL=$TOTAL" >> $GITHUB_ENV
+            echo "$BROWSER_PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
+          }
+
+          # Process results for each browser
+          extract_results "chromium"
+          extract_results "firefox"
+          extract_results "webkit"
 
       - name: Generate Playwright HTML Report
         run: npx playwright test --reporter=html || true
@@ -128,11 +163,8 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report](\($ARTIFACT_URL))*"
           curl -X POST -H "Content-Type: application/json" --data "$(jq -n \
-            --arg passed "$PASSED" \
-            --arg failed "$FAILED" \
-            --arg skipped "$SKIPPED" \
-            --arg percentage "$PASS_PERCENTAGE" \
-            --arg url "$ARTIFACT_URL" \
-            '{text: "✅ *Playwright Tests Completed!*\n📊 *Test Results:*\n- ✅ Passed: *\($passed)*\n- ❌ Failed: *\($failed)*\n- ⏭ Skipped: *\($skipped)*\n- 📈 Pass Rate: *\($percentage)%*\n📜 *[View Report](\($url))*"}')" \
+            --arg text "$MESSAGE" \
+            '{text: $text}')" \
             "$TEAMS_WEBHOOK_URL"
