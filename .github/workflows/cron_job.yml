@@ -24,35 +24,13 @@ jobs:
       - name: Install Dependencies
         run: npm install
 
-      - name: Install missing dependencies for Playwright
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-4-1 \
-            libgraphene-1.0-0 \
-            libwoff2dec0 \
-            libvpx9 \
-            libevent-2.1-7 \
-            libopus0 \
-            libgstreamer1.0-0 \
-            libgstreamer-plugins-base1.0-0 \
-            libflite1 \
-            libavif16 \
-            libharfbuzz-icu0 \
-            libsecret-1-0 \
-            libhyphen0 \
-            libmanette-0.2-0 \
-            libgles2-mesa-dev \
-            libx264-164
+      - name: Install Playwright (Chrome Only)
+        run: npx playwright install --with-deps chromium
 
-      - name: Install Playwright Browsers
-        run: npx playwright install --with-deps chromium firefox
-
-      - name: Run Playwright Tests
-        id: PlaywrightPortfolioStatus
+      - name: Run Playwright Tests (Chrome Only)
+        id: PlaywrightTests
         continue-on-error: true
-        run: |
-          npx playwright test --reporter=junit || echo "Tests failed but continuing..."
+        run: npx playwright test --project=chromium --reporter=html
 
       - name: Upload Playwright Report
         if: always()
@@ -67,17 +45,7 @@ jobs:
         env:
           WEBHOOK_URL: https://hooks.slack.com/services/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
         run: |
-          RESULTS_XML="playwright-report/results.xml"
-          if [[ ! -f "$RESULTS_XML" ]]; then
-            echo "Skipping Slack notification: results.xml not found!"
-            exit 0
-          fi
-
-          # Extract test results from XML
-          PASSED=$(grep -o 'tests="[^"]*"' "$RESULTS_XML" | grep -o '[0-9]*' | head -n 1)
-          FAILED=$(grep -o 'failures="[^"]*"' "$RESULTS_XML" | grep -o '[0-9]*' | head -n 1)
-          TIME=$(grep -o 'time="[^"]*"' "$RESULTS_XML" | grep -o '[0-9.]*' | head -n 1)
-
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \"Playwright Test Results:\n✔️ Passed: $PASSED\n❌ Failed: $FAILED\n⏱ Time: ${TIME}s\"
+            \"text\": \"*Playwright Test Report 📜:*\n🔗 View Report: <$ARTIFACT_URL|Click Here>\"
           }" $WEBHOOK_URL
