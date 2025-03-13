@@ -123,9 +123,8 @@ jobs:
         id: parse_results
         run: |
           # Ensure test-results.json exists
-          if [ ! -f test-results.json ]; then
-            echo "No test results found. Setting default values."
-            echo "chromium: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
+          if [ ! -s test-results.json ]; then
+            echo "chromium: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" > summary.txt
             echo "firefox: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
             echo "webkit: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
             exit 0
@@ -134,18 +133,16 @@ jobs:
           # Function to extract test results
           extract_results() {
             BROWSER=$1
-            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "passed")] | length' test-results.json || echo 0)
-            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "failed")] | length' test-results.json || echo 0)
-            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "skipped")] | length' test-results.json || echo 0)
+            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[] | select(.projectName == $browser) | .tests[].results[] | select(.status == "passed")] | length' test-results.json || echo 0)
+            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[] | select(.projectName == $browser) | .tests[].results[] | select(.status == "failed")] | length' test-results.json || echo 0)
+            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[] | select(.projectName == $browser) | .tests[].results[] | select(.status == "skipped")] | length' test-results.json || echo 0)
             TOTAL=$((PASSED + FAILED + SKIPPED))
 
-            # Avoid division by zero
             PASS_PERCENTAGE=0
             if [ "$TOTAL" -gt 0 ]; then
               PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
             fi
 
-            # Write to summary
             echo "$BROWSER: ✅ $PASSED | ❌ $FAILED | ⏭ $SKIPPED | 📈 $PASS_PERCENTAGE%" >> summary.txt
           }
 
@@ -155,7 +152,7 @@ jobs:
           extract_results "webkit"
 
       - name: Generate Playwright HTML Report
-        run: npx playwright test --reporter=html || true
+        run: npx playwright test --reporter=html --output=playwright-report || true
 
       - name: Compress Playwright Report
         run: zip -r playwright-report.zip playwright-report/
@@ -173,8 +170,11 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report]($ARTIFACT_URL)*"
-          curl -X POST -H "Content-Type: application/json" --data "$(jq -n \
-            --arg text "$MESSAGE" \
-            '{text: $text}')" \
-            "$TEAMS_WEBHOOK_URL"
+          
+          if [ -f summary.txt ]; then
+            MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report]($ARTIFACT_URL)*"
+          else
+            MESSAGE="⚠️ Playwright tests ran, but no summary was generated. Check logs for issues.\n📜 *[View Report]($ARTIFACT_URL)*"
+          fi
+
+          curl -X POST -H "Content-Type: application/json" --data "$(jq -n --arg text "$MESSAGE" '{text: $text}')" "$TEAMS_WEBHOOK_URL"
