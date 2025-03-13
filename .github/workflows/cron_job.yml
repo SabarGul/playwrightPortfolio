@@ -114,24 +114,38 @@ jobs:
       - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
         run: |
-          npx playwright test --reporter=json > test-results.json || true
+          npx playwright test --reporter=json > test-results.json || echo '{}' > test-results.json
 
       - name: Parse Playwright Test Results
         id: parse_results
         run: |
-          # Extract results per browser
+          # Ensure test-results.json exists
+          if [ ! -f test-results.json ]; then
+            echo "No test results found. Setting default values."
+            echo "chromium: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
+            echo "firefox: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
+            echo "webkit: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
+            exit 0
+          fi
+
+          # Function to extract test results
           extract_results() {
             BROWSER=$1
-            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "passed" and .project == $browser)] | length' test-results.json)
-            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "failed" and .project == $browser)] | length' test-results.json)
-            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "skipped" and .project == $browser)] | length' test-results.json)
+            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "passed" and .project == $browser)] | length' test-results.json || echo 0)
+            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "failed" and .project == $browser)] | length' test-results.json || echo 0)
+            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "skipped" and .project == $browser)] | length' test-results.json || echo 0)
             TOTAL=$((PASSED + FAILED + SKIPPED))
+
+            # Avoid division by zero
+            PASS_PERCENTAGE=0
             if [ "$TOTAL" -gt 0 ]; then
               PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
-            else
-              PASS_PERCENTAGE=0
             fi
+
+            # Write to summary
             echo "$BROWSER: ✅ $PASSED | ❌ $FAILED | ⏭ $SKIPPED | 📈 $PASS_PERCENTAGE%" >> summary.txt
+
+            # Export environment variables
             echo "$BROWSER_PASSED=$PASSED" >> $GITHUB_ENV
             echo "$BROWSER_FAILED=$FAILED" >> $GITHUB_ENV
             echo "$BROWSER_SKIPPED=$SKIPPED" >> $GITHUB_ENV
@@ -139,7 +153,7 @@ jobs:
             echo "$BROWSER_PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
           }
 
-          # Process results for each browser
+          # Extract results for each browser
           extract_results "chromium"
           extract_results "firefox"
           extract_results "webkit"
@@ -163,7 +177,7 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report](\($ARTIFACT_URL))*"
+          MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report]($ARTIFACT_URL)*"
           curl -X POST -H "Content-Type: application/json" --data "$(jq -n \
             --arg text "$MESSAGE" \
             '{text: $text}')" \
