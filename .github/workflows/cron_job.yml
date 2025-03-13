@@ -101,9 +101,12 @@ jobs:
           path: playwright-report.zip
           retention-days: 7
 
-      - name: Send Slack Notification
+      - name: Send Microsoft Teams Notification
         if: always()
-        uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_WEBHOOK: https://hooks.slack.com/services/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
-          SLACK_MESSAGE: "Playwright tests completed. Download the report from artifacts. ✅📊"
+          TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
+        run: |
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST -H "Content-Type: application/json" -d "{
+            \"text\": \"✅ *Playwright Tests Completed!*\n📜 *Report:* <$ARTIFACT_URL|View Report>\"
+          }" "$TEAMS_WEBHOOK_URL"
