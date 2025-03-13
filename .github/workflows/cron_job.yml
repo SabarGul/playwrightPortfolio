@@ -94,9 +94,9 @@ jobs:
       - name: Parse Playwright Test Results
         id: parse_results
         run: |
-          PASSED=$(jq '[.suites[].specs[] | select(.tests[].results[].status == "passed")] | length' test-results.json)
-          FAILED=$(jq '[.suites[].specs[] | select(.tests[].results[].status == "failed")] | length' test-results.json)
-          SKIPPED=$(jq '[.suites[].specs[] | select(.tests[].results[].status == "skipped")] | length' test-results.json)
+          PASSED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "passed")] | length' test-results.json)
+          FAILED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "failed")] | length' test-results.json)
+          SKIPPED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "skipped")] | length' test-results.json)
           TOTAL=$((PASSED + FAILED + SKIPPED))
           if [ "$TOTAL" -gt 0 ]; then
             PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
