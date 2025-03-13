@@ -116,6 +116,9 @@ jobs:
         run: |
           npx playwright test --reporter=json > test-results.json || echo '{}' > test-results.json
 
+      - name: Debug Test Results JSON
+        run: cat test-results.json | jq '.' || echo "Invalid JSON format"
+
       - name: Parse Playwright Test Results
         id: parse_results
         run: |
