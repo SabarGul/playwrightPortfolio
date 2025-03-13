@@ -89,7 +89,7 @@ jobs:
         run: npx playwright test --project=chromium || true
 
       - name: Generate Playwright HTML Report
-        run: npx playwright show-report
+        run: npx playwright test --reporter=html || true
 
       - name: Compress Playwright Report
         run: zip -r playwright-report.zip playwright-report/
