@@ -134,9 +134,9 @@ jobs:
           # Function to extract test results
           extract_results() {
             BROWSER=$1
-            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "passed" and .project == $browser)] | length' test-results.json || echo 0)
-            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "failed" and .project == $browser)] | length' test-results.json || echo 0)
-            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[].results[] | select(.status == "skipped" and .project == $browser)] | length' test-results.json || echo 0)
+            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "passed")] | length' test-results.json || echo 0)
+            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "failed")] | length' test-results.json || echo 0)
+            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "skipped")] | length' test-results.json || echo 0)
             TOTAL=$((PASSED + FAILED + SKIPPED))
 
             # Avoid division by zero
@@ -147,13 +147,6 @@ jobs:
 
             # Write to summary
             echo "$BROWSER: ✅ $PASSED | ❌ $FAILED | ⏭ $SKIPPED | 📈 $PASS_PERCENTAGE%" >> summary.txt
-
-            # Export environment variables
-            echo "$BROWSER_PASSED=$PASSED" >> $GITHUB_ENV
-            echo "$BROWSER_FAILED=$FAILED" >> $GITHUB_ENV
-            echo "$BROWSER_SKIPPED=$SKIPPED" >> $GITHUB_ENV
-            echo "$BROWSER_TOTAL=$TOTAL" >> $GITHUB_ENV
-            echo "$BROWSER_PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
           }
 
           # Extract results for each browser
