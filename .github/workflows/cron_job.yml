@@ -105,5 +105,5 @@ jobs:
         if: always()
         uses: rtCamp/action-slack-notify@v2
         env:
-          SLACK_WEBHOOK: https://hooks.slack.com/services/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
+          SLACK_WEBHOOK: https://hooks.slack.com/services/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
           SLACK_MESSAGE: "Playwright tests completed. Download the report from artifacts. ✅📊"
