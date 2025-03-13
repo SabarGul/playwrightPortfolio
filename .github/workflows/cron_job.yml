@@ -128,12 +128,11 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          curl -X POST -H "Content-Type: application/json" -d "{
-            \"text\": \"✅ *Playwright Tests Completed!*\n
-            📊 *Test Results:*\n
-            - ✅ Passed: **${{ env.PASSED }}**\n
-            - ❌ Failed: **${{ env.FAILED }}**\n
-            - ⏭ Skipped: **${{ env.SKIPPED }}**\n
-            - 📈 Pass Rate: **${{ env.PASS_PERCENTAGE }}%**\n
-            📜 *[View Report]($ARTIFACT_URL)*\"
-          }" "$TEAMS_WEBHOOK_URL"
+          curl -X POST -H "Content-Type: application/json" --data "$(jq -n \
+            --arg passed "$PASSED" \
+            --arg failed "$FAILED" \
+            --arg skipped "$SKIPPED" \
+            --arg percentage "$PASS_PERCENTAGE" \
+            --arg url "$ARTIFACT_URL" \
+            '{text: "✅ *Playwright Tests Completed!*\n📊 *Test Results:*\n- ✅ Passed: *\($passed)*\n- ❌ Failed: *\($failed)*\n- ⏭ Skipped: *\($skipped)*\n- 📈 Pass Rate: *\($percentage)%*\n📜 *[View Report](\($url))*"}')" \
+            "$TEAMS_WEBHOOK_URL"
