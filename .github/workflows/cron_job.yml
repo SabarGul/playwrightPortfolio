@@ -65,6 +65,8 @@ on:
   pull_request:
     branches:
       - master
+  schedule:
+    - cron: '0 7 * * *'  # Runs daily at 7 AM UTC (12 PM PST)
   workflow_dispatch:
 
 jobs:
@@ -86,7 +88,26 @@ jobs:
         run: npx playwright install --with-deps
 
       - name: Run Playwright Tests (Chrome only)
-        run: npx playwright test --project=chromium || true
+        id: playwright_tests
+        run: npx playwright test --project=chromium --reporter=json > test-results.json || true
+
+      - name: Parse Playwright Test Results
+        id: parse_results
+        run: |
+          PASSED=$(jq '[.suites[].specs[] | select(.tests[].results[].status == "passed")] | length' test-results.json)
+          FAILED=$(jq '[.suites[].specs[] | select(.tests[].results[].status == "failed")] | length' test-results.json)
+          SKIPPED=$(jq '[.suites[].specs[] | select(.tests[].results[].status == "skipped")] | length' test-results.json)
+          TOTAL=$((PASSED + FAILED + SKIPPED))
+          if [ "$TOTAL" -gt 0 ]; then
+            PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
+          else
+            PASS_PERCENTAGE=0
+          fi
+          echo "PASSED=$PASSED" >> $GITHUB_ENV
+          echo "FAILED=$FAILED" >> $GITHUB_ENV
+          echo "SKIPPED=$SKIPPED" >> $GITHUB_ENV
+          echo "TOTAL=$TOTAL" >> $GITHUB_ENV
+          echo "PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
 
       - name: Generate Playwright HTML Report
         run: npx playwright test --reporter=html || true
@@ -108,5 +129,11 @@ jobs:
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
           curl -X POST -H "Content-Type: application/json" -d "{
-            \"text\": \"✅ *Playwright Tests Completed!*\n📜 *Report:* <$ARTIFACT_URL|View Report>\"
+            \"text\": \"✅ *Playwright Tests Completed!*\n
+            📊 *Test Results:*\n
+            - ✅ Passed: **${{ env.PASSED }}**\n
+            - ❌ Failed: **${{ env.FAILED }}**\n
+            - ⏭ Skipped: **${{ env.SKIPPED }}**\n
+            - 📈 Pass Rate: **${{ env.PASS_PERCENTAGE }}%**\n
+            📜 *[View Report]($ARTIFACT_URL)*\"
           }" "$TEAMS_WEBHOOK_URL"
