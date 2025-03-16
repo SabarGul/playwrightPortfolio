@@ -29,45 +29,62 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
+      - name: Install xmlstarlet
+        run: sudo apt-get update && sudo apt-get install -y xmlstarlet
+
       - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
         run: |
-          npx playwright test --reporter=json > temp-results.json && jq empty temp-results.json && mv temp-results.json test-results.json || echo '{}' > test-results.json
+          npx playwright test --reporter=junit > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
 
-      - name: Debug Test Results JSON
-        run: cat test-results.json | jq '.' || echo "Invalid JSON format"
+      - name: Debug Test Results XML
+        run: cat results.xml
 
       - name: Parse Playwright Test Results
         id: parse_results
         run: |
-          # Ensure test-results.json exists
-          if [ ! -s test-results.json ]; then
-            echo "chromium: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" > summary.txt
-            echo "firefox: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
-            echo "webkit: ✅ 0 | ❌ 0 | ⏭ 0 | 📈 0%" >> summary.txt
-            exit 0
+          # Read test counts from results.xml using xmlstarlet
+          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml || echo 0)
+          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml || echo 0)
+          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
+          passed_tests=$((total_tests - (failed_tests + skipped_tests)))
+
+          # Determine status based on conditions
+          if [ $failed_tests -eq 0 ]; then
+            STATUS="passed"
+          else
+            STATUS="failed"
           fi
 
-          # Function to extract test results
-          extract_results() {
-            BROWSER=$1
-            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "passed")] | length' test-results.json || echo 0)
-            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "failed")] | length' test-results.json || echo 0)
-            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "skipped")] | length' test-results.json || echo 0)
-            TOTAL=$((PASSED + FAILED + SKIPPED))
+          # Output status based on passed tests
+          echo "Status: $STATUS"
 
-            PASS_PERCENTAGE=0
-            if [ "$TOTAL" -gt 0 ]; then
-              PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
-            fi
+          # Optionally, set ICON and COLOR based on STATUS
+          if [ "$STATUS" == "passed" ]; then
+            ICON="✔️"
+            COLOR="00FF00"
+          else
+            ICON="❌"
+            COLOR="FF0000"
+          fi
 
-            echo "$BROWSER: ✅ $PASSED | ❌ $FAILED | ⏭ $SKIPPED | 📈 $PASS_PERCENTAGE%" >> summary.txt
-          }
+          # Write summary to a file
+          echo "chromium: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" > summary.txt
+          echo "firefox: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
+          echo "webkit: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
 
-          # Extract results for each browser
-          extract_results "chromium"
-          extract_results "firefox"
-          extract_results "webkit"
+      - name: Generate Playwright HTML Report
+        run: npx playwright show-report || true
+
+      - name: Compress Playwright Report
+        run: zip -r playwright-report.zip playwright-report/
+
+      - name: Upload Playwright Report Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report.zip
+          retention-days: 7
 
       - name: Send Microsoft Teams Notification
         if: always()
