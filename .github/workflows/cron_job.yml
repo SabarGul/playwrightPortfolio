@@ -50,7 +50,20 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          STATUS="${{ job.status }}"
+          
+          if [ "$STATUS" == "success" ]; then
+            EMOJI="✅"
+          elif [ "$STATUS" == "failure" ]; then
+            EMOJI="❌"
+          else
+            EMOJI="⚠️"
+          fi
+
           MESSAGE='{
-            "text": "Playwright Test Results: '${{ job.status }}' | 📜 [View Report]('$ARTIFACT_URL')"
+            "text": "**📢 Playwright Test Results**\n\n
+            **Status:** '"$EMOJI $STATUS"'\n
+            **📜 Report:** [Click here to view]('"$ARTIFACT_URL"')"
           }'
+
           curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
