@@ -36,7 +36,10 @@ jobs:
         id: playwright_tests
         continue-on-error: true  # Ensure workflow continues even if tests fail
         run: |
-          npx playwright test --reporter=junit > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
+          if [ ! -d "playwright-report" ]; then
+            mkdir playwright-report
+          fi
+          npx playwright test --reporter=junit --output-dir=playwright-report > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
 
       - name: Debug Test Results XML
         run: cat results.xml
@@ -51,7 +54,7 @@ jobs:
           passed_tests=$((total_tests - (failed_tests + skipped_tests)))
 
           # Determine status
-          if [ $failed_tests -eq 0 ]; then
+          if [ "$failed_tests" -eq 0 ]; then
             STATUS="✅ Passed"
             COLOR="00FF00"
           else
@@ -60,7 +63,7 @@ jobs:
           fi
 
           # Calculate percentages
-          if [ $total_tests -gt 0 ]; then
+          if [ "$total_tests" -gt 0 ]; then
             pass_percent=$((100 * passed_tests / total_tests))
             fail_percent=$((100 * failed_tests / total_tests))
           else
@@ -78,8 +81,8 @@ jobs:
             echo "$bar ($percent%)"
           }
 
-          pass_bar=$(create_bar $pass_percent)
-          fail_bar=$(create_bar $fail_percent)
+          pass_bar=$(create_bar "$pass_percent")
+          fail_bar=$(create_bar "$fail_percent")
 
           # Write summary
           echo "Test Summary" > summary.txt
@@ -91,9 +94,10 @@ jobs:
 
       - name: Generate Playwright HTML Report (Always)
         run: |
-          npx playwright test --reporter=html
-          mkdir -p playwright-report
-          mv playwright-report/* ./playwright-report/
+          npx playwright test --reporter=html --output-dir=playwright-report
+          if [ ! -f "playwright-report/index.html" ]; then
+            echo "<html><body><h1>No test report generated</h1></body></html>" > playwright-report/index.html
+          fi
 
       - name: Compress Playwright Report
         run: zip -r playwright-report.zip playwright-report/
@@ -113,32 +117,32 @@ jobs:
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ -f summary.txt ]; then
-            SUMMARY=$(cat summary.txt)
-            MESSAGE="{
-              \"@type\": \"MessageCard\",
-              \"@context\": \"http://schema.org/extensions\",
-              \"themeColor\": \"${COLOR}\",
-              \"summary\": \"Playwright Test Report\",
-              \"sections\": [{
-                \"activityTitle\": \"📌 **Playwright Test Results**\",
-                \"activitySubtitle\": \"${STATUS}\",
-                \"activityImage\": \"https://cdn-icons-png.flaticon.com/512/190/190411.png\",
-                \"text\": \"\n\`\`\`\n${SUMMARY}\n\`\`\`\n📜 **[View Full Report]($ARTIFACT_URL)**\"
+            SUMMARY=$(cat summary.txt | jq -R -s '.')
+            MESSAGE=$(jq -n --arg color "$COLOR" --arg status "$STATUS" --arg summary "$SUMMARY" --arg url "$ARTIFACT_URL" '{
+              "@type": "MessageCard",
+              "@context": "http://schema.org/extensions",
+              "themeColor": $color,
+              "summary": "Playwright Test Report",
+              "sections": [{
+                "activityTitle": "📌 **Playwright Test Results**",
+                "activitySubtitle": $status,
+                "activityImage": "https://cdn-icons-png.flaticon.com/512/190/190411.png",
+                "text": ("```\n" + $summary + "\n```\n📜 **[View Full Report](" + $url + ")**")
               }]
-            }"
+            }')
 
             curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
           else
-            MESSAGE="{
-              \"@type\": \"MessageCard\",
-              \"@context\": \"http://schema.org/extensions\",
-              \"themeColor\": \"FF9900\",
-              \"summary\": \"Playwright Test Report\",
-              \"sections\": [{
-                \"activityTitle\": \"⚠️ Playwright Tests Ran, but No Summary Generated\",
-                \"text\": \"Check logs for potential issues.\n📜 **[View Full Report]($ARTIFACT_URL)**\"
+            MESSAGE=$(jq -n --arg url "$ARTIFACT_URL" '{
+              "@type": "MessageCard",
+              "@context": "http://schema.org/extensions",
+              "themeColor": "FF9900",
+              "summary": "Playwright Test Report",
+              "sections": [{
+                "activityTitle": "⚠️ Playwright Tests Ran, but No Summary Generated",
+                "text": "Check logs for potential issues.\n📜 **[View Full Report](" + $url + ")**"
               }]
-            }"
+            }')
 
             curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
           fi
