@@ -34,6 +34,7 @@ jobs:
 
       - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
+        continue-on-error: true  # Ensure workflow continues even if tests fail
         run: |
           npx playwright test --reporter=junit > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
 
@@ -49,32 +50,50 @@ jobs:
           skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
           passed_tests=$((total_tests - (failed_tests + skipped_tests)))
 
-          # Determine status based on conditions
+          # Determine status
           if [ $failed_tests -eq 0 ]; then
-            STATUS="passed"
-          else
-            STATUS="failed"
-          fi
-
-          # Output status based on passed tests
-          echo "Status: $STATUS"
-
-          # Optionally, set ICON and COLOR based on STATUS
-          if [ "$STATUS" == "passed" ]; then
-            ICON="✔️"
+            STATUS="✅ Passed"
             COLOR="00FF00"
           else
-            ICON="❌"
+            STATUS="❌ Failed"
             COLOR="FF0000"
           fi
 
-          # Write summary to a file
-          echo "chromium: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" > summary.txt
-          echo "firefox: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
-          echo "webkit: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
+          # Calculate percentages
+          if [ $total_tests -gt 0 ]; then
+            pass_percent=$((100 * passed_tests / total_tests))
+            fail_percent=$((100 * failed_tests / total_tests))
+          else
+            pass_percent=0
+            fail_percent=0
+          fi
 
-      - name: Generate Playwright HTML Report
-        run: npx playwright show-report || true
+          # Create Progress Bar function
+          create_bar() {
+            local percent=$1
+            local filled=$((percent / 5))  # Scale 100% to 20 characters
+            local empty=$((20 - filled))
+            local bar=$(printf '█%.0s' $(seq 1 $filled))
+            bar+=$(printf '░%.0s' $(seq 1 $empty))
+            echo "$bar ($percent%)"
+          }
+
+          pass_bar=$(create_bar $pass_percent)
+          fail_bar=$(create_bar $fail_percent)
+
+          # Write summary
+          echo "Test Summary" > summary.txt
+          echo "--------------------" >> summary.txt
+          echo "✅ Passed: $passed_tests | ❌ Failed: $failed_tests | ⏭ Skipped: $skipped_tests" >> summary.txt
+          echo "📈 Progress:" >> summary.txt
+          echo "$pass_bar" >> summary.txt
+          echo "$fail_bar" >> summary.txt
+
+      - name: Generate Playwright HTML Report (Always)
+        run: |
+          npx playwright test --reporter=html
+          mkdir -p playwright-report
+          mv playwright-report/* ./playwright-report/
 
       - name: Compress Playwright Report
         run: zip -r playwright-report.zip playwright-report/
@@ -92,11 +111,34 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          
-          if [ -f summary.txt ]; then
-            MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report]($ARTIFACT_URL)*"
-          else
-            MESSAGE="⚠️ Playwright tests ran, but no summary was generated. Check logs for issues.\n📜 *[View Report]($ARTIFACT_URL)*"
-          fi
 
-          curl -X POST -H "Content-Type: application/json" --data "$(jq -n --arg text "$MESSAGE" '{text: $text}')" "$TEAMS_WEBHOOK_URL"
+          if [ -f summary.txt ]; then
+            SUMMARY=$(cat summary.txt)
+            MESSAGE="{
+              \"@type\": \"MessageCard\",
+              \"@context\": \"http://schema.org/extensions\",
+              \"themeColor\": \"${COLOR}\",
+              \"summary\": \"Playwright Test Report\",
+              \"sections\": [{
+                \"activityTitle\": \"📌 **Playwright Test Results**\",
+                \"activitySubtitle\": \"${STATUS}\",
+                \"activityImage\": \"https://cdn-icons-png.flaticon.com/512/190/190411.png\",
+                \"text\": \"\n\`\`\`\n${SUMMARY}\n\`\`\`\n📜 **[View Full Report]($ARTIFACT_URL)**\"
+              }]
+            }"
+
+            curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
+          else
+            MESSAGE="{
+              \"@type\": \"MessageCard\",
+              \"@context\": \"http://schema.org/extensions\",
+              \"themeColor\": \"FF9900\",
+              \"summary\": \"Playwright Test Report\",
+              \"sections\": [{
+                \"activityTitle\": \"⚠️ Playwright Tests Ran, but No Summary Generated\",
+                \"text\": \"Check logs for potential issues.\n📜 **[View Full Report]($ARTIFACT_URL)**\"
+              }]
+            }"
+
+            curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
+          fi
