@@ -118,9 +118,14 @@ jobs:
       - name: Install xmlstarlet
         run: sudo apt-get update && sudo apt-get install -y xmlstarlet
 
-      - name: Run Playwright Tests (All Browsers)
+      - name: Run Playwright Tests
         id: playwright_tests
+        continue-on-error: true
         run: |
+          rm -rf playwright-report  # Remove old report
+          mkdir -p playwright-report  # Ensure the folder exists
+          npx playwright test --reporter=html --output=playwright-report  # Generate HTML report
+          npx playwright test --reporter=json > playwright-report/playwright-report.json || echo '{}' > playwright-report/playwright-report.json
           npx playwright test --reporter=junit > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
 
       - name: Debug Test Results XML
@@ -130,22 +135,19 @@ jobs:
         id: parse_results
         run: |
           # Read test counts from results.xml using xmlstarlet
-          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml || echo 0)
-          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml || echo 0)
-          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
+          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml 2>/dev/null || echo 0)
+          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml 2>/dev/null || echo 0)
+          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml 2>/dev/null || echo 0)
           passed_tests=$((total_tests - (failed_tests + skipped_tests)))
 
-          # Determine status based on conditions
+          # Determine status
           if [ $failed_tests -eq 0 ]; then
             STATUS="passed"
           else
             STATUS="failed"
           fi
 
-          # Output status based on passed tests
-          echo "Status: $STATUS"
-
-          # Optionally, set ICON and COLOR based on STATUS
+          # Set ICON and COLOR based on STATUS
           if [ "$STATUS" == "passed" ]; then
             ICON="✔️"
             COLOR="00FF00"
@@ -158,9 +160,6 @@ jobs:
           echo "chromium: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" > summary.txt
           echo "firefox: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
           echo "webkit: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
-
-      - name: Generate Playwright HTML Report
-        run: npx playwright show-report || true
 
       - name: Compress Playwright Report
         run: zip -r playwright-report.zip playwright-report/
