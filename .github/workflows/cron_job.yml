@@ -34,70 +34,11 @@ jobs:
 
       - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
-        continue-on-error: true  # Ensure workflow continues even if tests fail
+        continue-on-error: true
         run: |
-          if [ ! -d "playwright-report" ]; then
-            mkdir playwright-report
-          fi
-          npx playwright test --reporter=junit --output-dir=playwright-report > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
-
-      - name: Debug Test Results XML
-        run: cat results.xml
-
-      - name: Parse Playwright Test Results
-        id: parse_results
-        run: |
-          # Read test counts from results.xml using xmlstarlet
-          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml || echo 0)
-          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml || echo 0)
-          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
-          passed_tests=$((total_tests - (failed_tests + skipped_tests)))
-
-          # Determine status
-          if [ "$failed_tests" -eq 0 ]; then
-            STATUS="✅ Passed"
-            COLOR="00FF00"
-          else
-            STATUS="❌ Failed"
-            COLOR="FF0000"
-          fi
-
-          # Calculate percentages
-          if [ "$total_tests" -gt 0 ]; then
-            pass_percent=$((100 * passed_tests / total_tests))
-            fail_percent=$((100 * failed_tests / total_tests))
-          else
-            pass_percent=0
-            fail_percent=0
-          fi
-
-          # Create Progress Bar function
-          create_bar() {
-            local percent=$1
-            local filled=$((percent / 5))  # Scale 100% to 20 characters
-            local empty=$((20 - filled))
-            local bar=$(printf '█%.0s' $(seq 1 $filled))
-            bar+=$(printf '░%.0s' $(seq 1 $empty))
-            echo "$bar ($percent%)"
-          }
-
-          pass_bar=$(create_bar "$pass_percent")
-          fail_bar=$(create_bar "$fail_percent")
-
-          # Write summary
-          echo "Test Summary" > summary.txt
-          echo "--------------------" >> summary.txt
-          echo "✅ Passed: $passed_tests | ❌ Failed: $failed_tests | ⏭ Skipped: $skipped_tests" >> summary.txt
-          echo "📈 Progress:" >> summary.txt
-          echo "$pass_bar" >> summary.txt
-          echo "$fail_bar" >> summary.txt
-
-      - name: Generate Playwright HTML Report (Always)
-        run: |
-          npx playwright test --reporter=html --output-dir=playwright-report
-          if [ ! -f "playwright-report/index.html" ]; then
-            echo "<html><body><h1>No test report generated</h1></body></html>" > playwright-report/index.html
-          fi
+          mkdir -p playwright-report
+          npx playwright test --reporter=html
+          mv playwright-report/* ./playwright-report/
 
       - name: Compress Playwright Report
         run: zip -r playwright-report.zip playwright-report/
@@ -109,6 +50,27 @@ jobs:
           path: playwright-report.zip
           retention-days: 7
 
+      - name: Generate Test Summary
+        id: test_summary
+        run: |
+          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml || echo 0)
+          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml || echo 0)
+          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
+          passed_tests=$((total_tests - (failed_tests + skipped_tests)))
+
+          if [ "$failed_tests" -eq 0 ]; then
+            STATUS="✅ Passed"
+            COLOR="00FF00"
+          else
+            STATUS="❌ Failed"
+            COLOR="FF0000"
+          fi
+
+          echo "Total Tests: $total_tests" > summary.txt
+          echo "✅ Passed: $passed_tests" >> summary.txt
+          echo "❌ Failed: $failed_tests" >> summary.txt
+          echo "⏭ Skipped: $skipped_tests" >> summary.txt
+
       - name: Send Microsoft Teams Notification
         if: always()
         env:
@@ -117,16 +79,15 @@ jobs:
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
           if [ -f summary.txt ]; then
-            SUMMARY=$(cat summary.txt | jq -R -s '.')
+            SUMMARY=$(cat summary.txt | jq -Rs .)
             MESSAGE=$(jq -n --arg color "$COLOR" --arg status "$STATUS" --arg summary "$SUMMARY" --arg url "$ARTIFACT_URL" '{
               "@type": "MessageCard",
               "@context": "http://schema.org/extensions",
               "themeColor": $color,
               "summary": "Playwright Test Report",
               "sections": [{
-                "activityTitle": "📌 **Playwright Test Results**",
+                "activityTitle": "📌 Playwright Test Results",
                 "activitySubtitle": $status,
-                "activityImage": "https://cdn-icons-png.flaticon.com/512/190/190411.png",
                 "text": ("```\n" + $summary + "\n```\n📜 **[View Full Report](" + $url + ")**")
               }]
             }')
