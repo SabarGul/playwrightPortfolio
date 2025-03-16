@@ -1,85 +1,3 @@
-# name: Playwright Tests
-
-# on:
-#   push:
-#     branches:
-#       - master
-#   pull_request:
-#     branches:
-#       - master
-#   schedule:
-#     - cron: '0 7 * * *'  # Runs daily at 7 AM UTC (12 PM PST)
-#   workflow_dispatch:
-
-# jobs:
-#   test:
-#     runs-on: ubuntu-latest
-#     steps:
-#       - name: Checkout Repository
-#         uses: actions/checkout@v4
-
-#       - name: Setup Node.js
-#         uses: actions/setup-node@v4
-#         with:
-#           node-version: 18
-
-#       - name: Install Dependencies
-#         run: npm install
-
-#       - name: Install Playwright Browsers
-#         run: npx playwright install --with-deps
-
-#       - name: Run Playwright Tests (Chrome only)
-#         id: playwright_tests
-#         run: npx playwright test --project=chromium --reporter=json > test-results.json || true
-
-#       - name: Parse Playwright Test Results
-#         id: parse_results
-#         run: |
-#           PASSED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "passed")] | length' test-results.json)
-#           FAILED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "failed")] | length' test-results.json)
-#           SKIPPED=$(jq '[.suites[].specs[].tests[].results[] | select(.status == "skipped")] | length' test-results.json)
-#           TOTAL=$((PASSED + FAILED + SKIPPED))
-#           if [ "$TOTAL" -gt 0 ]; then
-#             PASS_PERCENTAGE=$((100 * PASSED / TOTAL))
-#           else
-#             PASS_PERCENTAGE=0
-#           fi
-#           echo "PASSED=$PASSED" >> $GITHUB_ENV
-#           echo "FAILED=$FAILED" >> $GITHUB_ENV
-#           echo "SKIPPED=$SKIPPED" >> $GITHUB_ENV
-#           echo "TOTAL=$TOTAL" >> $GITHUB_ENV
-#           echo "PASS_PERCENTAGE=$PASS_PERCENTAGE" >> $GITHUB_ENV
-
-#       - name: Generate Playwright HTML Report
-#         run: npx playwright test --reporter=html || true
-
-#       - name: Compress Playwright Report
-#         run: zip -r playwright-report.zip playwright-report/
-
-#       - name: Upload Playwright Report Artifact
-#         uses: actions/upload-artifact@v4
-#         with:
-#           name: playwright-report
-#           path: playwright-report.zip
-#           retention-days: 7
-
-#       - name: Send Microsoft Teams Notification
-#         if: always()
-#         env:
-#           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
-#         run: |
-#           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-#           curl -X POST -H "Content-Type: application/json" --data "$(jq -n \
-#             --arg passed "$PASSED" \
-#             --arg failed "$FAILED" \
-#             --arg skipped "$SKIPPED" \
-#             --arg percentage "$PASS_PERCENTAGE" \
-#             --arg url "$ARTIFACT_URL" \
-#             '{text: "✅ *Playwright Tests Completed!*\n📊 *Test Results:*\n- ✅ Passed: *\($passed)*\n- ❌ Failed: *\($failed)*\n- ⏭ Skipped: *\($skipped)*\n- 📈 Pass Rate: *\($percentage)%*\n📜 *[View Report](\($url))*"}')" \
-#             "$TEAMS_WEBHOOK_URL"
-
-
 name: Playwright Tests
 
 on:
@@ -114,7 +32,8 @@ jobs:
       - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
         run: |
-          npx playwright test --reporter=json > test-results.json || echo '{}' > test-results.json
+          npx playwright test --reporter=json > temp-results.json && jq empty temp-results.json && mv temp-results.json test-results.json || echo '{}' > test-results.json
+          npx playwright test --reporter=html --output=playwright-report
 
       - name: Debug Test Results JSON
         run: cat test-results.json | jq '.' || echo "Invalid JSON format"
