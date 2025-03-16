@@ -51,9 +51,9 @@ jobs:
           # Function to extract test results
           extract_results() {
             BROWSER=$1
-            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[] | select(.projectName == $browser) | .tests[].results[] | select(.status == "passed")] | length' test-results.json || echo 0)
-            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[] | select(.projectName == $browser) | .tests[].results[] | select(.status == "failed")] | length' test-results.json || echo 0)
-            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[] | select(.projectName == $browser) | .tests[].results[] | select(.status == "skipped")] | length' test-results.json || echo 0)
+            PASSED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "passed")] | length' test-results.json || echo 0)
+            FAILED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "failed")] | length' test-results.json || echo 0)
+            SKIPPED=$(jq --arg browser "$BROWSER" '[.suites[].specs[].tests[] | select(.projectName == $browser) | .results[] | select(.status == "skipped")] | length' test-results.json || echo 0)
             TOTAL=$((PASSED + FAILED + SKIPPED))
 
             PASS_PERCENTAGE=0
