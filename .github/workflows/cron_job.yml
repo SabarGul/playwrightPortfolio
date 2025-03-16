@@ -29,47 +29,20 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
-      - name: Install xmlstarlet
-        run: sudo apt-get update && sudo apt-get install -y xmlstarlet
-
-      - name: Run Playwright Tests (All Browsers)
+      - name: Run Playwright Tests and Save Report
         id: playwright_tests
         continue-on-error: true
         run: |
-          mkdir -p playwright-report
-          npx playwright test --reporter=html
-          mv playwright-report/* ./playwright-report/
-
-      - name: Compress Playwright Report
-        run: zip -r playwright-report.zip playwright-report/
+          rm -rf playwright-report  # Remove old report
+          mkdir -p playwright-report  # Ensure the folder exists
+          npx playwright test --reporter=html --output=playwright-report  # Save directly to root folder
 
       - name: Upload Playwright Report Artifact
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report.zip
+          path: playwright-report/index.html
           retention-days: 7
-
-      - name: Generate Test Summary
-        id: test_summary
-        run: |
-          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml || echo 0)
-          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml || echo 0)
-          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
-          passed_tests=$((total_tests - (failed_tests + skipped_tests)))
-
-          if [ "$failed_tests" -eq 0 ]; then
-            STATUS="✅ Passed"
-            COLOR="00FF00"
-          else
-            STATUS="❌ Failed"
-            COLOR="FF0000"
-          fi
-
-          echo "Total Tests: $total_tests" > summary.txt
-          echo "✅ Passed: $passed_tests" >> summary.txt
-          echo "❌ Failed: $failed_tests" >> summary.txt
-          echo "⏭ Skipped: $skipped_tests" >> summary.txt
 
       - name: Send Microsoft Teams Notification
         if: always()
@@ -77,33 +50,7 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-
-          if [ -f summary.txt ]; then
-            SUMMARY=$(cat summary.txt | jq -Rs .)
-            MESSAGE=$(jq -n --arg color "$COLOR" --arg status "$STATUS" --arg summary "$SUMMARY" --arg url "$ARTIFACT_URL" '{
-              "@type": "MessageCard",
-              "@context": "http://schema.org/extensions",
-              "themeColor": $color,
-              "summary": "Playwright Test Report",
-              "sections": [{
-                "activityTitle": "📌 Playwright Test Results",
-                "activitySubtitle": $status,
-                "text": ("```\n" + $summary + "\n```\n📜 **[View Full Report](" + $url + ")**")
-              }]
-            }')
-
-            curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
-          else
-            MESSAGE=$(jq -n --arg url "$ARTIFACT_URL" '{
-              "@type": "MessageCard",
-              "@context": "http://schema.org/extensions",
-              "themeColor": "FF9900",
-              "summary": "Playwright Test Report",
-              "sections": [{
-                "activityTitle": "⚠️ Playwright Tests Ran, but No Summary Generated",
-                "text": "Check logs for potential issues.\n📜 **[View Full Report](" + $url + ")**"
-              }]
-            }')
-
-            curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
-          fi
+          MESSAGE='{
+            "text": "Playwright Test Results: '${{ job.status }}' | 📜 [View Report]('$ARTIFACT_URL')"
+          }'
+          curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
