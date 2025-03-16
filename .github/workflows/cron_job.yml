@@ -1,3 +1,89 @@
+# name: Playwright Tests
+
+# on:
+#   push:
+#     branches:
+#       - master
+#   pull_request:
+#     branches:
+#       - master
+#   schedule:
+#     - cron: '0 7 * * *'  # Runs daily at 7 AM UTC
+#   workflow_dispatch:
+
+# jobs:
+#   test:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: Checkout Repository
+#         uses: actions/checkout@v4
+
+#       - name: Setup Node.js
+#         uses: actions/setup-node@v4
+#         with:
+#           node-version: 18
+
+#       - name: Install Dependencies
+#         run: npm install
+
+#       - name: Install Playwright Browsers
+#         run: npx playwright install --with-deps
+
+#       - name: Run Playwright Tests and Save Report
+#         id: playwright_tests
+#         continue-on-error: true
+#         run: |
+#           rm -rf playwright-report  # Remove old report
+#           mkdir -p playwright-report  # Ensure the folder exists
+#           npx playwright test --reporter=html --output=playwright-report  # Save directly to root folder
+
+#       - name: Upload Playwright Report Artifact
+#         uses: actions/upload-artifact@v4
+#         with:
+#           name: playwright-report
+#           path: playwright-report/index.html
+#           retention-days: 7
+
+#       - name: Send Microsoft Teams Notification
+#         if: always()
+#         env:
+#           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
+#         run: |
+#           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+#           STATUS="${{ job.status }}"
+
+#           if [ "$STATUS" == "success" ]; then
+#             EMOJI="✅"
+#           elif [ "$STATUS" == "failure" ]; then
+#             EMOJI="❌"
+#           else
+#             EMOJI="⚠️"
+#           fi
+
+#           # Ensure JSON report exists
+#           REPORT_PATH="playwright-report/playwright-report.json"
+#           if [ ! -f "$REPORT_PATH" ]; then
+#             echo "⚠️ Playwright JSON report not found!"
+#             TOTAL_TESTS=0
+#             PASSED_TESTS=0
+#           else
+#             # Extract test results from Playwright JSON report
+#             TOTAL_TESTS=$(jq '[.suites[].specs[].tests | length] | add // 0' "$REPORT_PATH")
+#             PASSED_TESTS=$(jq '[.suites[].specs[].tests[] | map(select(.results[].status=="passed")) | length] | add // 0' "$REPORT_PATH")
+#           fi
+
+#           FAILED_TESTS=$((TOTAL_TESTS - PASSED_TESTS))
+#           PERCENTAGE=$((TOTAL_TESTS > 0 ? (PASSED_TESTS * 100 / TOTAL_TESTS) : 0))
+
+#           MESSAGE=$(jq -n --arg emoji "$EMOJI" --arg status "$STATUS" --arg url "$ARTIFACT_URL" \
+#             --arg total "$TOTAL_TESTS" --arg passed "$PASSED_TESTS" --arg failed "$FAILED_TESTS" --arg percent "$PERCENTAGE" '{
+#             text: "**📢 Playwright Test Results**\n\n**Status:** \($emoji) \($status)\n\n✅ **Passed:** \($passed)/\($total) (\($percent)%)\n❌ **Failed:** \($failed)\n\n📜 **[View Report](\($url))**"
+#           }')
+
+#           echo "$MESSAGE" # Debugging: Print JSON before sending
+#           curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
+
+
 name: Playwright Tests
 
 on:
@@ -29,19 +115,61 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install --with-deps
 
-      - name: Run Playwright Tests and Save Report
+      - name: Install xmlstarlet
+        run: sudo apt-get update && sudo apt-get install -y xmlstarlet
+
+      - name: Run Playwright Tests (All Browsers)
         id: playwright_tests
-        continue-on-error: true
         run: |
-          rm -rf playwright-report  # Remove old report
-          mkdir -p playwright-report  # Ensure the folder exists
-          npx playwright test --reporter=html --output=playwright-report  # Save directly to root folder
+          npx playwright test --reporter=junit > results.xml || echo '<?xml version="1.0" encoding="UTF-8"?><testsuites tests="0" failures="0" skipped="0"></testsuites>' > results.xml
+
+      - name: Debug Test Results XML
+        run: cat results.xml
+
+      - name: Parse Playwright Test Results
+        id: parse_results
+        run: |
+          # Read test counts from results.xml using xmlstarlet
+          total_tests=$(xmlstarlet sel -t -v "/testsuites/@tests" results.xml || echo 0)
+          failed_tests=$(xmlstarlet sel -t -v "/testsuites/@failures" results.xml || echo 0)
+          skipped_tests=$(xmlstarlet sel -t -v "/testsuites/@skipped" results.xml || echo 0)
+          passed_tests=$((total_tests - (failed_tests + skipped_tests)))
+
+          # Determine status based on conditions
+          if [ $failed_tests -eq 0 ]; then
+            STATUS="passed"
+          else
+            STATUS="failed"
+          fi
+
+          # Output status based on passed tests
+          echo "Status: $STATUS"
+
+          # Optionally, set ICON and COLOR based on STATUS
+          if [ "$STATUS" == "passed" ]; then
+            ICON="✔️"
+            COLOR="00FF00"
+          else
+            ICON="❌"
+            COLOR="FF0000"
+          fi
+
+          # Write summary to a file
+          echo "chromium: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" > summary.txt
+          echo "firefox: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
+          echo "webkit: ✅ $passed_tests | ❌ $failed_tests | ⏭ $skipped_tests | 📈 $((100 * passed_tests / total_tests))%" >> summary.txt
+
+      - name: Generate Playwright HTML Report
+        run: npx playwright show-report || true
+
+      - name: Compress Playwright Report
+        run: zip -r playwright-report.zip playwright-report/
 
       - name: Upload Playwright Report Artifact
         uses: actions/upload-artifact@v4
         with:
           name: playwright-report
-          path: playwright-report/index.html
+          path: playwright-report.zip
           retention-days: 7
 
       - name: Send Microsoft Teams Notification
@@ -50,35 +178,11 @@ jobs:
           TEAMS_WEBHOOK_URL: "https://webhookbot.c-toss.com/api/bot/webhooks/e3577a1c-a3c9-4a52-baa2-6c46e9e4edae"
         run: |
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          STATUS="${{ job.status }}"
-
-          if [ "$STATUS" == "success" ]; then
-            EMOJI="✅"
-          elif [ "$STATUS" == "failure" ]; then
-            EMOJI="❌"
+          
+          if [ -f summary.txt ]; then
+            MESSAGE="✅ *Playwright Tests Completed!*\n\n📊 *Test Results:*\n\n$(cat summary.txt)\n📜 *[View Report]($ARTIFACT_URL)*"
           else
-            EMOJI="⚠️"
+            MESSAGE="⚠️ Playwright tests ran, but no summary was generated. Check logs for issues.\n📜 *[View Report]($ARTIFACT_URL)*"
           fi
 
-          # Ensure JSON report exists
-          REPORT_PATH="playwright-report/playwright-report.json"
-          if [ ! -f "$REPORT_PATH" ]; then
-            echo "⚠️ Playwright JSON report not found!"
-            TOTAL_TESTS=0
-            PASSED_TESTS=0
-          else
-            # Extract test results from Playwright JSON report
-            TOTAL_TESTS=$(jq '[.suites[].specs[].tests | length] | add // 0' "$REPORT_PATH")
-            PASSED_TESTS=$(jq '[.suites[].specs[].tests[] | map(select(.results[].status=="passed")) | length] | add // 0' "$REPORT_PATH")
-          fi
-
-          FAILED_TESTS=$((TOTAL_TESTS - PASSED_TESTS))
-          PERCENTAGE=$((TOTAL_TESTS > 0 ? (PASSED_TESTS * 100 / TOTAL_TESTS) : 0))
-
-          MESSAGE=$(jq -n --arg emoji "$EMOJI" --arg status "$STATUS" --arg url "$ARTIFACT_URL" \
-            --arg total "$TOTAL_TESTS" --arg passed "$PASSED_TESTS" --arg failed "$FAILED_TESTS" --arg percent "$PERCENTAGE" '{
-            text: "**📢 Playwright Test Results**\n\n**Status:** \($emoji) \($status)\n\n✅ **Passed:** \($passed)/\($total) (\($percent)%)\n❌ **Failed:** \($failed)\n\n📜 **[View Report](\($url))**"
-          }')
-
-          echo "$MESSAGE" # Debugging: Print JSON before sending
-          curl -H "Content-Type: application/json" -X POST --data "$MESSAGE" "$TEAMS_WEBHOOK_URL"
+          curl -X POST -H "Content-Type: application/json" --data "$(jq -n --arg text "$MESSAGE" '{text: $text}')" "$TEAMS_WEBHOOK_URL"
