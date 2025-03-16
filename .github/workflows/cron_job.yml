@@ -60,8 +60,24 @@ jobs:
             EMOJI="⚠️"
           fi
 
-          MESSAGE=$(jq -n --arg emoji "$EMOJI" --arg status "$STATUS" --arg url "$ARTIFACT_URL" '{
-            text: "**📢 Playwright Test Results**\n\n**Status:** \($emoji) \($status)\n\n📜 **[View Report](\($url))**"
+          # Ensure JSON report exists
+          REPORT_PATH="playwright-report/playwright-report.json"
+          if [ ! -f "$REPORT_PATH" ]; then
+            echo "⚠️ Playwright JSON report not found!"
+            TOTAL_TESTS=0
+            PASSED_TESTS=0
+          else
+            # Extract test results from Playwright JSON report
+            TOTAL_TESTS=$(jq '[.suites[].specs[].tests | length] | add // 0' "$REPORT_PATH")
+            PASSED_TESTS=$(jq '[.suites[].specs[].tests[] | map(select(.results[].status=="passed")) | length] | add // 0' "$REPORT_PATH")
+          fi
+
+          FAILED_TESTS=$((TOTAL_TESTS - PASSED_TESTS))
+          PERCENTAGE=$((TOTAL_TESTS > 0 ? (PASSED_TESTS * 100 / TOTAL_TESTS) : 0))
+
+          MESSAGE=$(jq -n --arg emoji "$EMOJI" --arg status "$STATUS" --arg url "$ARTIFACT_URL" \
+            --arg total "$TOTAL_TESTS" --arg passed "$PASSED_TESTS" --arg failed "$FAILED_TESTS" --arg percent "$PERCENTAGE" '{
+            text: "**📢 Playwright Test Results**\n\n**Status:** \($emoji) \($status)\n\n✅ **Passed:** \($passed)/\($total) (\($percent)%)\n❌ **Failed:** \($failed)\n\n📜 **[View Report](\($url))**"
           }')
 
           echo "$MESSAGE" # Debugging: Print JSON before sending
