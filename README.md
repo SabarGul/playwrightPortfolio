@@ -40,7 +40,8 @@ git clone https://github.com/SabarGul/playwrightPortfolio.git
 cd playwright-portfolio  
 
 # Install dependencies  
-npm install  
+npm install
+npm install playwright@latest 
 
 # Run tests in headed mode  
 npx playwright test --headed  
